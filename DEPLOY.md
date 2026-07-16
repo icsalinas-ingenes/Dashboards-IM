@@ -85,24 +85,74 @@ docker compose logs -f backend   # debe arrancar uvicorn sin errores de conexió
 curl http://localhost:8080/api/catalogos   # debe responder JSON, no error
 ```
 
-## 6. Exponerlo como página web (dominio + HTTPS)
+## 6. Exponerlo como página web (Cloudflare Tunnel)
 
-`frontend` queda escuchando en `127.0.0.1:8080` del servidor. Dos opciones:
+El servidor solo es accesible por VPN, así que en vez de abrir puertos o
+depender de una IP pública, se usa un túnel saliente de Cloudflare:
+`cloudflared` corre en el servidor y expone `frontend` (puerto `8080`) como
+una URL pública (`https://dashboard-fiv.tudominio.com`), sin tocar el
+firewall ni la VPN.
 
-**A) Ya tienes nginx/Caddy en el servidor para otros sitios** — agrega un
-`server`/`site` más que haga proxy_pass a `127.0.0.1:8080`, y certbot para el
-certificado como ya lo haces con tus otros sitios.
+**Riesgo a tener presente**: el backend (`main.py`) todavía no tiene login
+(`# >>> ROLES` está pendiente) — mientras solo vivía en la VPN, la VPN
+actuaba como filtro. En cuanto el túnel esté activo, cualquiera con el link
+puede ver el dashboard. Si en algún momento quieres restringirlo a personas
+concretas por correo, Cloudflare Access (Zero Trust, gratis) se agrega
+después sin cambiar nada de esto.
 
-**B) No tienes nada corriendo en el puerto 80/443 aún** — la forma más
-simple es [Caddy](https://caddyserver.com/), que saca el certificado HTTPS
-solo:
+### 6.1 Dominio en Cloudflare
+
+Si tu dominio no está ya en Cloudflare: crea una cuenta gratis, agrégalo
+("Add a site") y cambia los *nameservers* en tu registrador a los que te
+indique Cloudflare. Si el dominio ya tiene correo (MX) u otros registros,
+verifica que se hayan migrado antes de cortar el DNS viejo.
+
+### 6.2 Instalar y autenticar `cloudflared` en el servidor
+
 ```bash
-sudo apt-get install -y caddy
-echo "tu-dominio.com {
-    reverse_proxy 127.0.0.1:8080
-}" | sudo tee /etc/caddy/Caddyfile
-sudo systemctl restart caddy
+curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo gpg --dearmor -o /usr/share/keyrings/cloudflare-main.gpg
+echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared $(lsb_release -cs) main" \
+  | sudo tee /etc/apt/sources.list.d/cloudflared.list
+sudo apt-get update && sudo apt-get install -y cloudflared
+
+cloudflared tunnel login
+# Abre un link — lo visitas en tu navegador y autorizas contra tu cuenta
+# de Cloudflare y el dominio del paso 6.1.
 ```
+
+### 6.3 Crear el túnel y apuntarlo al frontend
+
+```bash
+cloudflared tunnel create dashboard-fiv
+# Guarda el Tunnel ID que imprime y la ruta del archivo de credenciales
+# (algo como ~/.cloudflared/<tunnel-id>.json) — es un secreto, mismo trato
+# que age.key: nunca a git, permisos 600.
+
+sudo mkdir -p /etc/cloudflared
+sudo mv ~/.cloudflared/*.json /etc/cloudflared/credentials.json
+sudo chmod 600 /etc/cloudflared/credentials.json
+```
+
+Crea `/etc/cloudflared/config.yml`:
+```yaml
+tunnel: dashboard-fiv
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: dashboard-fiv.tudominio.com
+    service: http://localhost:8080
+  - service: http_status:404
+```
+
+Enruta el DNS y deja el túnel corriendo como servicio:
+```bash
+cloudflared tunnel route dns dashboard-fiv dashboard-fiv.tudominio.com
+sudo cloudflared service install
+sudo systemctl enable --now cloudflared
+```
+
+Verifica en `https://dashboard-fiv.tudominio.com` desde fuera de la VPN
+(por ejemplo, con datos móviles).
 
 ## Actualizar después de cambios
 
