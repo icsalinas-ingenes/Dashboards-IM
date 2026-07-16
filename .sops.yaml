@@ -1,5 +1,5 @@
 creation_rules:
-  - path_regex: backend/\.env$
+  - path_regex: \.env$
     input_type: dotenv
     output_type: dotenv
     # Llave pública del servidor ubun-ia (privada en /etc/dashboards-im/age.key)
