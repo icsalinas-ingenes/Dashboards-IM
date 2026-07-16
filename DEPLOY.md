@@ -51,13 +51,13 @@ contraseña de la base):
    de [releases](https://github.com/getsops/sops/releases)).
 3. Cifra:
    ```bash
-   sops -e backend/.env > backend/.env.enc
+   sops -e backend/.env > backend/secrets.env
    ```
-4. Verifica que `backend/.env.enc` sea ilegible (no debe mostrar la
+4. Verifica que `backend/secrets.env` sea ilegible (no debe mostrar la
    contraseña) y que `backend/.env` (texto plano) **no** se suba — ya está en
    `.gitignore`.
 
-`backend/.env.enc` sí es seguro de commitear/copiar al servidor: sin la
+`backend/secrets.env` sí es seguro de commitear/copiar al servidor: sin la
 llave privada de `/etc/dashboards-im/age.key` es inútil.
 
 ## 4. Llevar el código al servidor
@@ -70,7 +70,7 @@ Si no, `rsync`/`scp` la carpeta completa (sin `node_modules`, `.venv`,
 `backend/.env` en texto plano — ya excluidos por `.gitignore` si usas
 `rsync --filter=':- .gitignore'`).
 
-Confirma que `backend/.env.enc` llegó al servidor y que **no** llegó
+Confirma que `backend/secrets.env` llegó al servidor y que **no** llegó
 `backend/.env` en texto plano.
 
 ## 5. Levantar los contenedores
@@ -163,7 +163,7 @@ docker compose up -d --build
 
 Si cambia el `.env` (nueva contraseña, nuevo host de base de datos, etc.):
 ```bash
-sops -e backend/.env > backend/.env.enc
+sops -e backend/.env > backend/secrets.env
 docker compose up -d --build backend
 ```
 
