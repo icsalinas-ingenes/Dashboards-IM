@@ -1,0 +1,7 @@
+creation_rules:
+  - path_regex: backend/\.env$
+    input_type: dotenv
+    output_type: dotenv
+    # Reemplaza esto con la llave pública que te da `age-keygen` en el
+    # servidor (empieza con "age1..."). Ver DEPLOY.md paso 2.
+    age: age1REEMPLAZA_ESTO_CON_TU_LLAVE_PUBLICA

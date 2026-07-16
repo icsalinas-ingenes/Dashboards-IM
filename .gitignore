@@ -1,0 +1,11 @@
+backend/.venv/
+backend/__pycache__/
+backend/.env
+
+frontend/node_modules/
+frontend/dist/
+
+# Llaves privadas de age/sops — jamás deben subirse (backend/.env.enc sí,
+# ese va cifrado y es seguro versionarlo).
+*.agekey
+age.key
