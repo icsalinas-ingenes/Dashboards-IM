@@ -26,9 +26,12 @@ from typing import Optional
 from dotenv import load_dotenv
 from fastapi import FastAPI, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 import sqlalchemy as sa
 from sqlalchemy import text
+
+from pdf_report import build_blastos_pdf, build_embarazo_pdf
 
 load_dotenv()
 
@@ -51,6 +54,9 @@ DENOMINADORES = {
     "ov_mii": "ovocitos_mii_10",
     "ov_insem": "total_ovocitos_insem",
 }
+# Etiquetas legibles (solo para el reporte PDF; el front tiene su propia copia).
+NUMERADOR_LABELS = {"blastos_all": "Blastos (cualquier calidad)", "blastos_top": "Blastos bonitos (D5/D6)"}
+DENOMINADOR_LABELS = {"ov_cap": "Óvulos capturados", "ov_mii": "Óvulos MII (maduros)", "ov_insem": "Óvulos inseminados"}
 # Sucursales de EEUU (result3). Todo lo demás = México.
 SUCURSALES_US = {"Orange County", "Houston", "San Diego", "McAllen"}
 
@@ -270,6 +276,32 @@ def dashboard_blastos(f: Filtros = Depends(get_filtros)):
     }
 
 
+def _meta_lines_blastos(f: Filtros) -> list[str]:
+    def n(vals, todos):
+        return "Todos" if not vals else (vals[0] if len(vals) == 1 else f"{len(vals)} seleccionados")
+    return [
+        f"{f.desde} a {f.hasta}",
+        {"all": "Ambos países", "MX": "México", "US": "EEUU"}[f.pais.value],
+        f"Médico: {n(f.medicos, None)}",
+        f"Sucursal: {n(f.sucursales, None)}",
+        f"Tipo de ciclo: {n(f.tipos_ciclo, None)}",
+        f"Técnica: {n(f.tecnicas, None)}",
+    ]
+
+
+@app.get("/api/dashboards/blastos/pdf")
+def dashboard_blastos_pdf(f: Filtros = Depends(get_filtros)):
+    data = dashboard_blastos(f)
+    pdf_bytes = build_blastos_pdf(
+        data, _meta_lines_blastos(f),
+        NUMERADOR_LABELS[f.numerador.value], DENOMINADOR_LABELS[f.denominador.value],
+    )
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=reporte_blastos.pdf"},
+    )
+
+
 # --------------------------------------------------- pregunta 2: embarazo -
 # Fuente: pruebas_consolidado_embarazo. Tiene medico/sucursal propios —
 # no requiere el join con gran_consolidado_fiv (que estaba roto). La tasa
@@ -437,6 +469,30 @@ def dashboard_embarazo(f: FiltrosEmbarazo = Depends(get_filtros_embarazo)):
             for r in tabla_rows
         ],
     }
+
+
+def _meta_lines_embarazo(f: FiltrosEmbarazo) -> list[str]:
+    def n(vals):
+        return "Todos" if not vals else (vals[0] if len(vals) == 1 else f"{len(vals)} seleccionados")
+    return [
+        f"{f.desde} a {f.hasta}",
+        {"all": "Ambos países", "MX": "México", "US": "EEUU"}[f.pais.value],
+        f"Médico: {n(f.medicos)}",
+        f"Sucursal: {n(f.sucursales)}",
+        f"Tratamiento: {n(f.ttos)}",
+        f"Clasificación: {n(f.clasificaciones)}",
+        f"Rango de edad: {n(f.rangos_edad)}",
+    ]
+
+
+@app.get("/api/dashboards/embarazo/pdf")
+def dashboard_embarazo_pdf(f: FiltrosEmbarazo = Depends(get_filtros_embarazo)):
+    data = dashboard_embarazo(f)
+    pdf_bytes = build_embarazo_pdf(data, _meta_lines_embarazo(f))
+    return Response(
+        content=pdf_bytes, media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=reporte_embarazo.pdf"},
+    )
 
 
 @app.get("/api/catalogos/embarazo")

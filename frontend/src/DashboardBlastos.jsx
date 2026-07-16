@@ -37,7 +37,11 @@ function aniosARango(anios) {
 }
 
 function DashboardBlastosBody() {
-  const [anios, setAnios] = useState(ANIOS);
+  const isPrint = new URLSearchParams(window.location.search).get("print") === "1";
+  const [anios, setAnios] = useState(() => {
+    const p = new URLSearchParams(window.location.search).getAll("anio");
+    return p.length ? p : ANIOS;
+  });
   const [pais, setPais] = useState("all");
   const [numKey, setNumKey] = useState("blastos_all");
   const [denKey, setDenKey] = useState("ov_cap");
@@ -91,6 +95,17 @@ function DashboardBlastosBody() {
   const tog = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
   const numLabel = NUMERADORES[numKey].label, denLabel = DENOMINADORES[denKey].label;
 
+  const descargarPdf = () => {
+    const { desde, hasta } = aniosARango(anios);
+    const params = new URLSearchParams({ desde, hasta, numerador: numKey, denominador: denKey, pais });
+    if (anios.length < ANIOS.length) anios.forEach((a) => params.append("anio", a));
+    if (medicos.length < catalogoMedicos.length) medicos.forEach((m) => params.append("medico", m));
+    if (sucursales.length < catalogoSucursales.length) sucursales.forEach((s) => params.append("sucursal", s));
+    if (tiposCiclo.length < catalogoTiposCiclo.length) tiposCiclo.forEach((t) => params.append("origen", t));
+    if (tecnicas.length < catalogoTecnicas.length) tecnicas.forEach((t) => params.append("tecnica", t));
+    window.open(`/api/dashboards/blastos/pdf?${params}`, "_blank");
+  };
+
   if (error) return <div style={{ padding: 22, color: C.down }}>Error cargando el dashboard: {error}</div>;
   if (!data) return <div style={{ padding: 22, color: C.muted }}>Cargando…</div>;
 
@@ -111,6 +126,7 @@ function DashboardBlastosBody() {
         <MultiSelect label="Sucursal" options={catalogoSucursales.map((s) => s[0])} selected={sucursales} onToggle={(v) => tog(sucursales, setSucursales, v)} onAll={() => setSucursales(sucursales.length === catalogoSucursales.length ? [] : catalogoSucursales.map((s) => s[0]))} />
         <MultiSelect label="Tipo de ciclo" options={catalogoTiposCiclo} selected={tiposCiclo} onToggle={(v) => tog(tiposCiclo, setTiposCiclo, v)} onAll={() => setTiposCiclo(tiposCiclo.length === catalogoTiposCiclo.length ? [] : [...catalogoTiposCiclo])} />
         <MultiSelect label="Técnica" options={catalogoTecnicas} selected={tecnicas} onToggle={(v) => tog(tecnicas, setTecnicas, v)} onAll={() => setTecnicas(tecnicas.length === catalogoTecnicas.length ? [] : [...catalogoTecnicas])} />
+        <BotonPdf onClick={descargarPdf} />
       </div>
 
       <div style={{ display: "flex", gap: 18, flexWrap: "wrap", marginBottom: 16 }}>
@@ -139,7 +155,7 @@ function DashboardBlastosBody() {
             <XAxis dataKey="mes" tickFormatter={mesLabel} tick={{ fontSize: 11, fill: C.muted }} tickLine={false} axisLine={{ stroke: C.line }} />
             <YAxis unit="%" tick={{ fontSize: 11, fill: C.muted }} tickLine={false} axisLine={false} width={44} />
             <Tooltip contentStyle={{ fontFamily: FONT_UI, fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} labelFormatter={mesLabel} formatter={(v, n) => [v == null ? "—" : `${v}%`, n]} />
-            <Line type="monotone" dataKey="tasa" name="Tasa" stroke={C.primary} strokeWidth={2.2} dot={{ r: 2.5, fill: C.primary }} activeDot={{ r: 4 }} connectNulls />
+            <Line type="monotone" dataKey="tasa" name="Tasa" stroke={C.primary} strokeWidth={2.2} dot={{ r: 2.5, fill: C.primary }} activeDot={{ r: 4 }} connectNulls isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -149,14 +165,14 @@ function DashboardBlastosBody() {
           <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>Comparativo por {rankBy === "medico" ? "médico" : "sucursal"}</div>
           <Segmented options={[{ value: "medico", label: "Médico" }, { value: "sucursal", label: "Sucursal" }]} value={rankBy} onChange={setRankBy} />
         </div>
-        <div style={{ maxHeight: 380, overflowY: "auto" }}>
+        <div style={isPrint ? {} : { maxHeight: 380, overflowY: "auto" }}>
           <ResponsiveContainer width="100%" height={ranking.length * 30 + 20}>
             <BarChart data={ranking} layout="vertical" margin={{ top: 0, right: 54, left: 8, bottom: 0 }}>
               <CartesianGrid stroke={C.lineSoft} horizontal={false} />
               <XAxis type="number" unit="%" tick={{ fontSize: 11, fill: C.muted }} tickLine={false} axisLine={false} />
               <YAxis type="category" dataKey="clave" width={rankBy === "medico" ? 168 : 108} tickFormatter={(v) => truncar(v, rankBy === "medico" ? 24 : 16)} tick={{ fontSize: 12, fill: C.inkSoft }} tickLine={false} axisLine={false} interval={0} />
               <Tooltip cursor={{ fill: C.lineSoft }} contentStyle={{ fontFamily: FONT_UI, fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} labelFormatter={(v) => v} formatter={(v, n, p) => [`${v}%  ·  n=${fmtInt(p.payload.n)} · ${p.payload.ciclos} ciclos`, "Tasa"]} />
-              <Bar dataKey="tasa" radius={[0, 4, 4, 0]} barSize={18}>
+              <Bar dataKey="tasa" radius={[0, 4, 4, 0]} barSize={18} isAnimationActive={false}>
                 {ranking.map((r, i) => <Cell key={i} fill={i === 0 ? C.primary : C.primarySoft} />)}
                 <LabelList dataKey="tasa" position="right" formatter={(v) => `${v}%`} style={{ fontFamily: FONT_MONO, fontSize: 11, fill: C.inkSoft, fontWeight: 600 }} />
               </Bar>
@@ -168,7 +184,7 @@ function DashboardBlastosBody() {
 
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px" }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Detalle por médico y sucursal</div>
-        <div style={{ overflow: "auto", maxHeight: 420 }}>
+        <div style={isPrint ? {} : { overflow: "auto", maxHeight: 420 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead><tr style={{ color: C.muted, fontSize: 11.5, position: "sticky", top: 0, background: C.surface }}>
               <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600 }}>#</th>
@@ -205,7 +221,11 @@ function DashboardBlastosBody() {
 }
 
 function DashboardEmbarazoBody() {
-  const [anios, setAnios] = useState(ANIOS);
+  const isPrint = new URLSearchParams(window.location.search).get("print") === "1";
+  const [anios, setAnios] = useState(() => {
+    const p = new URLSearchParams(window.location.search).getAll("anio");
+    return p.length ? p : ANIOS;
+  });
   const [pais, setPais] = useState("all");
   const [rankBy, setRankBy] = useState("medico");
 
@@ -259,6 +279,18 @@ function DashboardEmbarazoBody() {
 
   const tog = (arr, set, v) => set(arr.includes(v) ? arr.filter((x) => x !== v) : [...arr, v]);
 
+  const descargarPdf = () => {
+    const { desde, hasta } = aniosARango(anios);
+    const params = new URLSearchParams({ desde, hasta, pais });
+    if (anios.length < ANIOS.length) anios.forEach((a) => params.append("anio", a));
+    if (medicos.length < catalogoMedicos.length) medicos.forEach((m) => params.append("medico", m));
+    if (sucursales.length < catalogoSucursales.length) sucursales.forEach((s) => params.append("sucursal", s));
+    if (ttos.length < catalogoTtos.length) ttos.forEach((t) => params.append("tratamiento", t));
+    if (clasificaciones.length < catalogoClasificaciones.length) clasificaciones.forEach((c) => params.append("clasificacion", c));
+    if (rangosEdad.length < catalogoRangosEdad.length) rangosEdad.forEach((r) => params.append("rango_edad", r));
+    window.open(`/api/dashboards/embarazo/pdf?${params}`, "_blank");
+  };
+
   if (error) return <div style={{ padding: 22, color: C.down }}>Error cargando el dashboard: {error}</div>;
   if (!data) return <div style={{ padding: 22, color: C.muted }}>Cargando…</div>;
 
@@ -281,6 +313,7 @@ function DashboardEmbarazoBody() {
         <MultiSelect label="Tratamiento" options={catalogoTtos} selected={ttos} onToggle={(v) => tog(ttos, setTtos, v)} onAll={() => setTtos(ttos.length === catalogoTtos.length ? [] : [...catalogoTtos])} />
         <MultiSelect label="Clasificación" options={catalogoClasificaciones} selected={clasificaciones} onToggle={(v) => tog(clasificaciones, setClasificaciones, v)} onAll={() => setClasificaciones(clasificaciones.length === catalogoClasificaciones.length ? [] : [...catalogoClasificaciones])} />
         <MultiSelect label="Rango de edad" options={catalogoRangosEdad} selected={rangosEdad} onToggle={(v) => tog(rangosEdad, setRangosEdad, v)} onAll={() => setRangosEdad(rangosEdad.length === catalogoRangosEdad.length ? [] : [...catalogoRangosEdad])} />
+        <BotonPdf onClick={descargarPdf} />
       </div>
 
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
@@ -300,7 +333,7 @@ function DashboardEmbarazoBody() {
             <XAxis dataKey="mes" tickFormatter={mesLabel} tick={{ fontSize: 11, fill: C.muted }} tickLine={false} axisLine={{ stroke: C.line }} />
             <YAxis unit="%" tick={{ fontSize: 11, fill: C.muted }} tickLine={false} axisLine={false} width={44} />
             <Tooltip contentStyle={{ fontFamily: FONT_UI, fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} labelFormatter={mesLabel} formatter={(v, n) => [v == null ? "—" : `${v}%`, n]} />
-            <Line type="monotone" dataKey="tasa" name="Tasa" stroke={C.primary} strokeWidth={2.2} dot={{ r: 2.5, fill: C.primary }} activeDot={{ r: 4 }} connectNulls />
+            <Line type="monotone" dataKey="tasa" name="Tasa" stroke={C.primary} strokeWidth={2.2} dot={{ r: 2.5, fill: C.primary }} activeDot={{ r: 4 }} connectNulls isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>
       </div>
@@ -310,14 +343,14 @@ function DashboardEmbarazoBody() {
           <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>Comparativo por {rankBy === "medico" ? "médico" : "sucursal"}</div>
           <Segmented options={[{ value: "medico", label: "Médico" }, { value: "sucursal", label: "Sucursal" }]} value={rankBy} onChange={setRankBy} />
         </div>
-        <div style={{ maxHeight: 380, overflowY: "auto" }}>
+        <div style={isPrint ? {} : { maxHeight: 380, overflowY: "auto" }}>
           <ResponsiveContainer width="100%" height={ranking.length * 30 + 20}>
             <BarChart data={ranking} layout="vertical" margin={{ top: 0, right: 54, left: 8, bottom: 0 }}>
               <CartesianGrid stroke={C.lineSoft} horizontal={false} />
               <XAxis type="number" unit="%" tick={{ fontSize: 11, fill: C.muted }} tickLine={false} axisLine={false} />
               <YAxis type="category" dataKey="clave" width={rankBy === "medico" ? 168 : 108} tickFormatter={(v) => truncar(v, rankBy === "medico" ? 24 : 16)} tick={{ fontSize: 12, fill: C.inkSoft }} tickLine={false} axisLine={false} interval={0} />
               <Tooltip cursor={{ fill: C.lineSoft }} contentStyle={{ fontFamily: FONT_UI, fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} labelFormatter={(v) => v} formatter={(v, n, p) => [`${v}%  ·  n=${fmtInt(p.payload.ciclos)} ciclos · ${fmtInt(p.payload.positivos)} positivos`, "Tasa"]} />
-              <Bar dataKey="tasa" radius={[0, 4, 4, 0]} barSize={18}>
+              <Bar dataKey="tasa" radius={[0, 4, 4, 0]} barSize={18} isAnimationActive={false}>
                 {ranking.map((r, i) => <Cell key={i} fill={i === 0 ? C.primary : C.primarySoft} />)}
                 <LabelList dataKey="tasa" position="right" formatter={(v) => `${v}%`} style={{ fontFamily: FONT_MONO, fontSize: 11, fill: C.inkSoft, fontWeight: 600 }} />
               </Bar>
@@ -329,7 +362,7 @@ function DashboardEmbarazoBody() {
 
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px" }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Detalle por médico y sucursal</div>
-        <div style={{ overflow: "auto", maxHeight: 420 }}>
+        <div style={isPrint ? {} : { overflow: "auto", maxHeight: 420 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
             <thead><tr style={{ color: C.muted, fontSize: 11.5, position: "sticky", top: 0, background: C.surface }}>
               <th style={{ textAlign: "right", padding: "6px 8px", fontWeight: 600 }}>#</th>
@@ -400,6 +433,15 @@ const ICON = {
 };
 
 // ---------- átomos UI ----------
+function BotonPdf({ onClick }) {
+  return (
+    <button onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 6, cursor: "pointer", background: C.primary, border: "none", borderRadius: 8, padding: "7px 13px", fontFamily: FONT_UI, fontSize: 12.5, fontWeight: 600, color: "#fff", marginLeft: "auto" }}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16" /></svg>
+      Generar PDF
+    </button>
+  );
+}
+
 function Segmented({ options, value, onChange }) {
   return (
     <div style={{ display: "inline-flex", background: C.lineSoft, borderRadius: 8, padding: 2 }}>
@@ -540,11 +582,12 @@ function PanelEstado({ d }) {
 // ---------- SHELL ----------
 export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [active, setActive] = useState("blastos");
+  const [active, setActive] = useState(() => new URLSearchParams(window.location.search).get("dash") || "blastos");
   const d = DASHBOARDS.find((x) => x.id === active);
   const Vista = d && d.view;   // el registro decide qué se pinta
   return (
     <div style={{ display: "flex", minHeight: 600, background: C.bg, fontFamily: FONT_UI, color: C.ink }}>
+      <style>{"@media print { @page { size: 450mm 297mm; margin: 10mm; } }"}</style>
       <Sidebar open={sidebarOpen} setOpen={setSidebarOpen} active={active} setActive={setActive} />
       <div style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
         {Vista ? <Vista /> : <PanelEstado d={d} />}
