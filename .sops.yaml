@@ -2,6 +2,5 @@ creation_rules:
   - path_regex: backend/\.env$
     input_type: dotenv
     output_type: dotenv
-    # Reemplaza esto con la llave pública que te da `age-keygen` en el
-    # servidor (empieza con "age1..."). Ver DEPLOY.md paso 2.
-    age: age1REEMPLAZA_ESTO_CON_TU_LLAVE_PUBLICA
+    # Llave pública del servidor ubun-ia (privada en /etc/dashboards-im/age.key)
+    age: age127sdryg3ensw5t8fcuym5at4yep0a97pn99rsjwc70ult9mxvu8sk2t828
