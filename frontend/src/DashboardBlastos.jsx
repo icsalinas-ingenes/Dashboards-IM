@@ -46,6 +46,7 @@ function DashboardBlastosBody() {
   const [numKey, setNumKey] = useState("blastos_all");
   const [denKey, setDenKey] = useState("ov_cap");
   const [rankBy, setRankBy] = useState("medico");
+  const [origenVista, setOrigenVista] = useState("medico");
 
   const [catalogoMedicos, setCatalogoMedicos] = useState([]);
   const [catalogoSucursales, setCatalogoSucursales] = useState([]);
@@ -110,6 +111,11 @@ function DashboardBlastosBody() {
   if (!data) return <div style={{ padding: 22, color: C.muted }}>Cargando…</div>;
 
   const serie = data.serie, ranking = data.ranking[rankBy], tabla = data.tabla;
+  const origenData = (data.origen[origenVista] || []).map((m) => ({
+    clave: m.clave || "—",
+    propios: m.propios ? m.propios.tasa : null, ovodon: m.ovodon ? m.ovodon.tasa : null,
+    propiosN: m.propios ? m.propios.ciclos : 0, ovodonN: m.ovodon ? m.ovodon.ciclos : 0,
+  }));
 
   return (
     <div style={{ padding: "22px 24px" }}>
@@ -182,6 +188,39 @@ function DashboardBlastosBody() {
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>Cada barra es Σ blastos ÷ Σ óvulos del grupo — nunca el promedio de tasas por ciclo. {ranking.length} en la lista, con scroll · pasa el cursor para ver el n.</div>
       </div>
 
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>Comparativo por origen de óvulos</div>
+          <Segmented options={[{ value: "medico", label: "Médico" }, { value: "sucursal", label: "Sucursal" }]} value={origenVista} onChange={setOrigenVista} />
+        </div>
+        <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+          {data.origen.general.map((g) => (
+            <div key={g.origen} style={{ flex: "1 1 160px", background: C.bg, borderRadius: 10, padding: "10px 14px", borderLeft: `3px solid ${g.origen === "Propios" ? C.primary : C.green}` }}>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}>{g.origen === "Propios" ? "Propios" : "Ovodonación"}</div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 20, fontWeight: 600, color: C.ink }}>{fmtPct(g.tasa)}</div>
+              <div style={{ fontSize: 11, color: C.muted }}>{fmtInt(g.ciclos)} ciclos</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 14, marginBottom: 8, fontSize: 11.5, color: C.inkSoft }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.primary, display: "inline-block" }} />Propios</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.green, display: "inline-block" }} />Ovodonación</span>
+        </div>
+        <div style={isPrint ? {} : { maxHeight: 380, overflowY: "auto" }}>
+          <ResponsiveContainer width="100%" height={origenData.length * 32 + 20}>
+            <BarChart data={origenData} layout="vertical" margin={{ top: 0, right: 12, left: 8, bottom: 0 }}>
+              <CartesianGrid stroke={C.lineSoft} horizontal={false} />
+              <XAxis type="number" unit="%" tick={{ fontSize: 11, fill: C.muted }} tickLine={false} axisLine={false} />
+              <YAxis type="category" dataKey="clave" width={origenVista === "medico" ? 168 : 108} tickFormatter={(v) => truncar(v, origenVista === "medico" ? 24 : 16)} tick={{ fontSize: 12, fill: C.inkSoft }} tickLine={false} axisLine={false} interval={0} />
+              <Tooltip cursor={{ fill: C.lineSoft }} contentStyle={{ fontFamily: FONT_UI, fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} labelFormatter={(v) => v} formatter={(v, name, p) => [v == null ? "—" : `${v}%  ·  n=${fmtInt(name === "Propios" ? p.payload.propiosN : p.payload.ovodonN)} ciclos`, name]} />
+              <Bar dataKey="propios" name="Propios" fill={C.primary} radius={[0, 4, 4, 0]} barSize={11} isAnimationActive={false} />
+              <Bar dataKey="ovodon" name="Ovodon" fill={C.green} radius={[0, 4, 4, 0]} barSize={11} isAnimationActive={false} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>Cada barra es Σ blastos ÷ Σ óvulos del grupo, separado por origen del óvulo. {origenData.length} en la lista, con scroll.</div>
+      </div>
+
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px" }}>
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 10 }}>Detalle por médico y sucursal</div>
         <div style={isPrint ? {} : { overflow: "auto", maxHeight: 420 }}>
@@ -228,6 +267,7 @@ function DashboardEmbarazoBody() {
   });
   const [pais, setPais] = useState("all");
   const [rankBy, setRankBy] = useState("medico");
+  const [origenVista, setOrigenVista] = useState("medico");
 
   const [catalogoMedicos, setCatalogoMedicos] = useState([]);
   const [catalogoSucursales, setCatalogoSucursales] = useState([]);
@@ -295,6 +335,11 @@ function DashboardEmbarazoBody() {
   if (!data) return <div style={{ padding: 22, color: C.muted }}>Cargando…</div>;
 
   const serie = data.serie, ranking = data.ranking[rankBy], tabla = data.tabla;
+  const origenData = (data.origen[origenVista] || []).map((m) => ({
+    clave: m.clave || "—",
+    propios: m.propios ? m.propios.tasa : null, ovodon: m.ovodon ? m.ovodon.tasa : null,
+    propiosN: m.propios ? m.propios.ciclos : 0, ovodonN: m.ovodon ? m.ovodon.ciclos : 0,
+  }));
 
   return (
     <div style={{ padding: "22px 24px" }}>
@@ -358,6 +403,39 @@ function DashboardEmbarazoBody() {
           </ResponsiveContainer>
         </div>
         <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>Cada barra es positivos ÷ total del grupo — nunca el promedio de tasas por ciclo. {ranking.length} en la lista, con scroll · pasa el cursor para ver el n.</div>
+      </div>
+
+      <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px", marginBottom: 16 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: C.ink }}>Comparativo por origen de óvulos</div>
+          <Segmented options={[{ value: "medico", label: "Médico" }, { value: "sucursal", label: "Sucursal" }]} value={origenVista} onChange={setOrigenVista} />
+        </div>
+        <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+          {data.origen.general.map((g) => (
+            <div key={g.origen} style={{ flex: "1 1 160px", background: C.bg, borderRadius: 10, padding: "10px 14px", borderLeft: `3px solid ${g.origen === "Propios" ? C.primary : C.green}` }}>
+              <div style={{ fontSize: 11, color: C.muted, fontWeight: 600 }}>{g.origen === "Propios" ? "Propios" : "Ovodonación"}</div>
+              <div style={{ fontFamily: FONT_MONO, fontSize: 20, fontWeight: 600, color: C.ink }}>{fmtPct(g.tasa)}</div>
+              <div style={{ fontSize: 11, color: C.muted }}>{fmtInt(g.ciclos)} ciclos</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 14, marginBottom: 8, fontSize: 11.5, color: C.inkSoft }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.primary, display: "inline-block" }} />Propios</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 10, height: 10, borderRadius: 2, background: C.green, display: "inline-block" }} />Ovodonación</span>
+        </div>
+        <div style={isPrint ? {} : { maxHeight: 380, overflowY: "auto" }}>
+          <ResponsiveContainer width="100%" height={origenData.length * 32 + 20}>
+            <BarChart data={origenData} layout="vertical" margin={{ top: 0, right: 12, left: 8, bottom: 0 }}>
+              <CartesianGrid stroke={C.lineSoft} horizontal={false} />
+              <XAxis type="number" unit="%" tick={{ fontSize: 11, fill: C.muted }} tickLine={false} axisLine={false} />
+              <YAxis type="category" dataKey="clave" width={origenVista === "medico" ? 168 : 108} tickFormatter={(v) => truncar(v, origenVista === "medico" ? 24 : 16)} tick={{ fontSize: 12, fill: C.inkSoft }} tickLine={false} axisLine={false} interval={0} />
+              <Tooltip cursor={{ fill: C.lineSoft }} contentStyle={{ fontFamily: FONT_UI, fontSize: 12, borderRadius: 8, border: `1px solid ${C.line}` }} labelFormatter={(v) => v} formatter={(v, name, p) => [v == null ? "—" : `${v}%  ·  n=${fmtInt(name === "Propios" ? p.payload.propiosN : p.payload.ovodonN)} ciclos`, name]} />
+              <Bar dataKey="propios" name="Propios" fill={C.primary} radius={[0, 4, 4, 0]} barSize={11} isAnimationActive={false} />
+              <Bar dataKey="ovodon" name="Ovodon" fill={C.green} radius={[0, 4, 4, 0]} barSize={11} isAnimationActive={false} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>Cada barra es positivos ÷ total del grupo, separado por origen del óvulo. {origenData.length} en la lista, con scroll.</div>
       </div>
 
       <div style={{ background: C.surface, border: `1px solid ${C.line}`, borderRadius: 12, padding: "16px 18px" }}>

@@ -57,6 +57,20 @@ DENOMINADORES = {
 # Etiquetas legibles (solo para el reporte PDF; el front tiene su propia copia).
 NUMERADOR_LABELS = {"blastos_all": "Blastos (cualquier calidad)", "blastos_top": "Blastos bonitos (D5/D6)"}
 DENOMINADOR_LABELS = {"ov_cap": "Óvulos capturados", "ov_mii": "Óvulos MII (maduros)", "ov_insem": "Óvulos inseminados"}
+
+# Agrupación para la sección "comparativo por origen de óvulos": junta las
+# variantes sueltas de cada columna en dos baldes (Propios/Ovodon). Valores
+# fijos del whitelist — nunca texto de usuario — seguros de interpolar.
+ORIGEN_BUCKETS_BLASTOS = {"Propios": ("Propios", "Propios More"), "Ovodon": ("Ovodon", "Ovodon BD", "Ovodon More")}
+ORIGEN_BUCKETS_EMBARAZO = {"Propios": ("PROPIOS", "CONG PROPIOS"), "Ovodon": ("OVODON", "CONG OVODON")}
+
+
+def _case_origen(column: str, buckets: dict[str, tuple[str, ...]]) -> str:
+    whens = " ".join(
+        f"WHEN {column} IN ({','.join(repr(v) for v in vals)}) THEN '{label}'"
+        for label, vals in buckets.items()
+    )
+    return f"CASE {whens} ELSE NULL END"
 # Sucursales de EEUU (result3). Todo lo demás = México.
 SUCURSALES_US = {"Orange County", "Houston", "San Diego", "McAllen"}
 
@@ -168,6 +182,14 @@ def _cols(f: Filtros) -> tuple[str, str]:
     return DENOMINADORES[f.denominador.value], NUMERADORES[f.numerador.value]
 
 
+def _pivot_origen(rows) -> list[dict]:
+    """Agrupa filas (clave, origen, ...) en {clave, Propios: fila|None, Ovodon: fila|None}."""
+    by_clave: dict[str, dict] = {}
+    for r in rows:
+        by_clave.setdefault(r["clave"], {"clave": r["clave"]})[r["origen"]] = dict(r)
+    return list(by_clave.values())
+
+
 # --------------------------------------------------------------- app ----
 app = FastAPI(title="Dashboard FIV API", version="0.1.0")
 app.add_middleware(
@@ -229,14 +251,46 @@ def dashboard_blastos(f: Filtros = Depends(get_filtros)):
         ORDER BY SUM(g.{num_col}) / SUM(g.{den_col}) DESC
     """)
 
+    origen_case = _case_origen("g.tipo_de_ciclo", ORIGEN_BUCKETS_BLASTOS)
+    origen_general_sql = text(f"""
+        SELECT {origen_case} AS origen, COUNT(*) AS ciclos, SUM(g.{den_col}) AS ovulos, SUM(g.{num_col}) AS blastos
+        FROM pruebas_gran_consolidado_fiv g
+        WHERE {where}
+        GROUP BY origen HAVING origen IS NOT NULL AND SUM(g.{den_col}) > 0
+    """)
+    origen_medico_sql = text(f"""
+        SELECT g.medico_responsable AS clave, {origen_case} AS origen,
+               COUNT(*) AS ciclos, SUM(g.{den_col}) AS ovulos, SUM(g.{num_col}) AS blastos
+        FROM pruebas_gran_consolidado_fiv g
+        WHERE {where}
+        GROUP BY g.medico_responsable, origen HAVING origen IS NOT NULL AND SUM(g.{den_col}) > 0
+        ORDER BY g.medico_responsable
+    """)
+    origen_sucursal_sql = text(f"""
+        SELECT g.lugar_de_procedencia AS clave, {origen_case} AS origen,
+               COUNT(*) AS ciclos, SUM(g.{den_col}) AS ovulos, SUM(g.{num_col}) AS blastos
+        FROM pruebas_gran_consolidado_fiv g
+        WHERE {where}
+        GROUP BY g.lugar_de_procedencia, origen HAVING origen IS NOT NULL AND SUM(g.{den_col}) > 0
+        ORDER BY g.lugar_de_procedencia
+    """)
+
     def rate(num, den):
         return round(100 * (num or 0) / den, 1) if den else None
+
+    def _origen_item(row):
+        if not row:
+            return None
+        return {"tasa": rate(row["blastos"], row["ovulos"]), "n": row["ovulos"], "ciclos": row["ciclos"]}
 
     with engine.connect() as cx:
         serie_rows = cx.execute(serie_sql, params).mappings().all()
         rank_med = cx.execute(ranking_medico_sql, params).mappings().all()
         rank_suc = cx.execute(ranking_suc_sql, params).mappings().all()
         tabla_rows = cx.execute(tabla_sql, params).mappings().all()
+        origen_general_rows = cx.execute(origen_general_sql, params).mappings().all()
+        origen_medico_rows = cx.execute(origen_medico_sql, params).mappings().all()
+        origen_sucursal_rows = cx.execute(origen_sucursal_sql, params).mappings().all()
 
     tot_ov = sum(r["ovulos"] or 0 for r in serie_rows)
     tot_bl = sum(r["blastos"] or 0 for r in serie_rows)
@@ -273,6 +327,21 @@ def dashboard_blastos(f: Filtros = Depends(get_filtros)):
              "tasa": rate(r["blastos"], r["ovulos"])}
             for r in tabla_rows
         ],
+        "origen": {
+            "general": [
+                {"origen": r["origen"], "tasa": rate(r["blastos"], r["ovulos"]),
+                 "n": r["ovulos"], "ciclos": r["ciclos"]}
+                for r in origen_general_rows
+            ],
+            "medico": [
+                {"clave": item["clave"], "propios": _origen_item(item.get("Propios")), "ovodon": _origen_item(item.get("Ovodon"))}
+                for item in _pivot_origen(origen_medico_rows)
+            ],
+            "sucursal": [
+                {"clave": item["clave"], "propios": _origen_item(item.get("Propios")), "ovodon": _origen_item(item.get("Ovodon"))}
+                for item in _pivot_origen(origen_sucursal_rows)
+            ],
+        },
     }
 
 
@@ -429,14 +498,44 @@ def dashboard_embarazo(f: FiltrosEmbarazo = Depends(get_filtros_embarazo)):
         ORDER BY {positivo} / COUNT(*) DESC
     """)
 
+    origen_case = _case_origen("e.tto", ORIGEN_BUCKETS_EMBARAZO)
+    origen_general_sql = text(f"""
+        SELECT {origen_case} AS origen, COUNT(*) AS ciclos, {positivo} AS positivos
+        FROM pruebas_consolidado_embarazo e
+        WHERE {where}
+        GROUP BY origen HAVING origen IS NOT NULL
+    """)
+    origen_medico_sql = text(f"""
+        SELECT e.medico AS clave, {origen_case} AS origen, COUNT(*) AS ciclos, {positivo} AS positivos
+        FROM pruebas_consolidado_embarazo e
+        WHERE {where}
+        GROUP BY e.medico, origen HAVING origen IS NOT NULL
+        ORDER BY e.medico
+    """)
+    origen_sucursal_sql = text(f"""
+        SELECT e.sucursal AS clave, {origen_case} AS origen, COUNT(*) AS ciclos, {positivo} AS positivos
+        FROM pruebas_consolidado_embarazo e
+        WHERE {where}
+        GROUP BY e.sucursal, origen HAVING origen IS NOT NULL
+        ORDER BY e.sucursal
+    """)
+
     def rate(pos, tot):
         return round(100 * (pos or 0) / tot, 1) if tot else None
+
+    def _origen_item(row):
+        if not row:
+            return None
+        return {"tasa": rate(row["positivos"], row["ciclos"]), "ciclos": row["ciclos"], "positivos": row["positivos"]}
 
     with engine.connect() as cx:
         serie_rows = cx.execute(serie_sql, params).mappings().all()
         rank_med = cx.execute(ranking_medico_sql, params).mappings().all()
         rank_suc = cx.execute(ranking_suc_sql, params).mappings().all()
         tabla_rows = cx.execute(tabla_sql, params).mappings().all()
+        origen_general_rows = cx.execute(origen_general_sql, params).mappings().all()
+        origen_medico_rows = cx.execute(origen_medico_sql, params).mappings().all()
+        origen_sucursal_rows = cx.execute(origen_sucursal_sql, params).mappings().all()
 
     tot_ci = sum(r["ciclos"] or 0 for r in serie_rows)
     tot_pos = sum(r["positivos"] or 0 for r in serie_rows)
@@ -468,6 +567,21 @@ def dashboard_embarazo(f: FiltrosEmbarazo = Depends(get_filtros_embarazo)):
              "tasa": rate(r["positivos"], r["ciclos"])}
             for r in tabla_rows
         ],
+        "origen": {
+            "general": [
+                {"origen": r["origen"], "tasa": rate(r["positivos"], r["ciclos"]),
+                 "ciclos": r["ciclos"], "positivos": r["positivos"]}
+                for r in origen_general_rows
+            ],
+            "medico": [
+                {"clave": item["clave"], "propios": _origen_item(item.get("Propios")), "ovodon": _origen_item(item.get("Ovodon"))}
+                for item in _pivot_origen(origen_medico_rows)
+            ],
+            "sucursal": [
+                {"clave": item["clave"], "propios": _origen_item(item.get("Propios")), "ovodon": _origen_item(item.get("Ovodon"))}
+                for item in _pivot_origen(origen_sucursal_rows)
+            ],
+        },
     }
 
 
